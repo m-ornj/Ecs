@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Ecs
@@ -301,6 +302,44 @@ struct EcsTests {
         world.destroy(entity1)
         world.destroy(entity2)
         world.destroy(entity3)
+    }
+
+    @Test
+    mutating func staticStrings() {
+        struct Name { let v: StaticString }
+        struct Position { var x: Int, y: Int }
+        struct Velocity { var dx: Int, dy: Int }
+
+        let entity1 = world.create(
+            with: (
+                Name(v: "Hare"),
+                Position(x: 0, y: 0),
+                Velocity(dx: 10, dy: 0)
+            )
+        )
+        let entity2 = world.create(
+            with: (
+                Name(v: "Tortoise"),
+                Position(x: 0, y: 0),
+                Velocity(dx: 1, dy: 0)
+            )
+        )
+
+        #expect(String(describing: world.get(Name.self, for: entity1)!.v) == "Hare")
+        #expect(String(describing: world.get(Name.self, for: entity2)!.v) == "Tortoise")
+
+        for _ in 0..<10 {
+            ViewBuilder<Position, Velocity>()
+                .view(into: world)
+                .forEach(in: &world) { pos, vel in
+                    pos.pointee.y += vel.pointee.dy
+                }
+        }
+
+        // TODO: add more
+
+        world.destroy(entity1)
+        world.destroy(entity2)
     }
 
     @Test
@@ -609,5 +648,92 @@ struct EcsTests {
         #expect(ViewBuilder<Entity>().view(into: world).count == 0)
         #expect(ViewBuilder<Position>().view(into: world).count == 0)
         #expect(ViewBuilder<Velocity>().view(into: world).count == 0)
+    }
+}
+
+@Suite
+struct EcsPlayground {
+    var world = World()
+
+    // @Test
+    // mutating func playground() {
+    //     class Tracker {
+    //         init() { print("  [Memory] Box/Allocation Created") }
+    //         deinit { print("  [Memory] Box/Allocation Destroyed") }
+    //     }
+
+    //     struct ManagedFatStruct: BitwiseCopyable {
+    //         // let tracker = Tracker()
+    //         let str: StaticString
+    //         var data: (Double, Double, Double, Double) = (0, 0, 0, 0)
+    //     }
+
+    //     print("Creating struct...")
+    //     let myStruct = ManagedFatStruct(str: "StaticString")
+
+    //     print("Casting to Any (Potential Box)...")
+    //     let anonymous: Any = myStruct
+    //     print(anonymous)
+
+    //     let entity = world.create(with: ManagedFatStruct(str: "StaticString", data: (1, 2, 3, 4)))
+    // }
+
+    @Test
+    mutating func lookup() {
+        struct MyString: BitwiseCopyable, Hashable, ExpressibleByStringLiteral {
+            let str: StaticString
+
+            init(stringLiteral value: StaticString) {
+                str = value
+            }
+
+            static func == (lhs: MyString, rhs: MyString) -> Bool {
+                if lhs.str.hasPointerRepresentation && rhs.str.hasPointerRepresentation {
+                    if lhs.str.utf8Start == rhs.str.utf8Start {
+                        return true
+                    }
+                    return strcmp(lhs.str.utf8Start, rhs.str.utf8Start) == 0
+                }
+
+                if !lhs.str.hasPointerRepresentation && !rhs.str.hasPointerRepresentation {
+                    return lhs.str.unicodeScalar.value == rhs.str.unicodeScalar.value
+                }
+
+                return false
+            }
+
+            public func hash(into hasher: inout Hasher) {
+                hasher.combine(
+                    bytes: UnsafeRawBufferPointer(
+                        start: str.utf8Start,
+                        count: str.utf8CodeUnitCount
+                    )
+                )
+            }
+        }
+
+        struct Name { let v: MyString }
+        struct Position { var x: Int, y: Int }
+        struct Velocity { var dx: Int, dy: Int }
+
+        let entity1 = world.create(
+            with: (
+                Name(v: "Hare"),
+                Position(x: 0, y: 0),
+                Velocity(dx: 10, dy: 0)
+            )
+        )
+        let entity2 = world.create(
+            with: (
+                Name(v: "Tortoise"),
+                Position(x: 0, y: 0),
+                Velocity(dx: 1, dy: 0)
+            )
+        )
+
+        #expect(String(describing: world.get(Name.self, for: entity1)!.v) == "Hare")
+        #expect(String(describing: world.get(Name.self, for: entity2)!.v) == "Tortoise")
+
+        // world.addLookup(for: \Name.v)
     }
 }

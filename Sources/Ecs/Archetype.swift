@@ -19,23 +19,18 @@ public struct ArchetypeSchema: Sendable {
         let newLayout = ComponentLayout(T.self)
         let newID = ComponentID(T.self)
 
-        var index: Int?
+        var index = id.endIndex
         for i in 0...id.count {
-            if i < id.count && newID > id[i] {
-                continue
-            }
-            if i == id.count || newID < id[i] {
+            if newID > id[i] {
                 index = i
+                break
             }
-            break
         }
 
         var layout = layout
         var id = id
-        if let index {
-            layout.insert(newLayout, at: index)
-            id.insert(newID, at: index)
-        }
+        layout.insert(newLayout, at: index)
+        id.insert(newID, at: index)
         return ArchetypeSchema(layout: layout, id: id)
     }
 
@@ -134,32 +129,73 @@ public struct Archetype: Sendable {
 
     public subscript<T: Component>(_ index: Int) -> T {
         get {
-            guard let componentIndex = indices[ComponentID(T.self)] else {
-                preconditionFailure("Component \(T.self) not found in archetype.")
-            }
+            let componentIndex = self.index(of: T.self)
             return components[componentIndex][index]
         }
         mutating set(newValue) {
-            guard let componentIndex = indices[ComponentID(T.self)] else {
-                preconditionFailure("Component \(T.self) not found in archetype.")
-            }
+            let componentIndex = self.index(of: T.self)
             components[componentIndex][index] = newValue
         }
     }
 
     public func buffer<T: Component>(of type: T.Type) -> UnsafeBufferPointer<T> {
-        let id = ComponentID(type.self)
-        guard let index = indices[id] else {
-            preconditionFailure("Component \(T.self) not found in archetype.")
-        }
-        return components[index].buffer(of: T.self)
+        let componentIndex = index(of: T.self)
+        return components[componentIndex].buffer(of: T.self)
     }
 
     public mutating func buffer<T: Component>(of type: T.Type) -> UnsafeMutableBufferPointer<T> {
-        let id = ComponentID(type.self)
+        let componentIndex = index(of: T.self)
+        return components[componentIndex].buffer(of: T.self)
+    }
+}
+
+extension Archetype {
+    private func index<T: Component>(of type: T.Type) -> Int {
+        let id = ComponentID(T.self)
         guard let index = indices[id] else {
             preconditionFailure("Component \(T.self) not found in archetype.")
         }
-        return components[index].buffer(of: T.self)
+        return index
+    }
+}
+
+public struct ArchetypeRegistry: Sendable {
+    public private(set) var archetypes: [Archetype] = []
+    public private(set) var indexByID: [ArchetypeID: UInt32] = [:]
+
+    public mutating func register(schema: ArchetypeSchema) -> UInt32 {
+        if let index = indexByID[schema.id] {
+            return index
+        }
+        let archetype = Archetype(schema: schema)
+        archetypes.append(archetype)
+        let index = UInt32(archetypes.count - 1)
+        indexByID[archetype.schema.id] = index
+        return index
+    }
+}
+
+extension ArchetypeRegistry: RandomAccessCollection {
+    public typealias Index = UInt32
+    public typealias Element = Archetype
+
+    public var startIndex: UInt32 { UInt32(archetypes.startIndex) }
+    public var endIndex: UInt32 { UInt32(archetypes.endIndex) }
+
+    public subscript(_ position: UInt32) -> Archetype {
+        get {
+            return archetypes[Int(position)]
+        }
+        mutating set(newValue) {
+            let oldID = self.archetypes[Int(position)].schema.id
+            let newID = newValue.schema.id
+
+            archetypes[Int(position)] = newValue
+
+            if oldID != newID {
+                indexByID.removeValue(forKey: oldID)
+            }
+            indexByID[newID] = UInt32(position)
+        }
     }
 }

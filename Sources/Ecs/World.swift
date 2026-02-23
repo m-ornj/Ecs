@@ -1,6 +1,6 @@
 import Synchronization
 
-private let globalWorldID = Atomic<UInt>(0)
+private let globalWorldID = Atomic<UInt64>(0)
 
 public final class WorldID: Sendable {
     public let id = {
@@ -9,20 +9,49 @@ public final class WorldID: Sendable {
     }()
 }
 
+public struct EntityMetadata: Sendable {
+    let archetypeIndex: UInt32
+    let indexInArchetype: UInt32
+}
+
+public struct ComponentGraph: Sendable {
+    public private(set) var archetypeIndices: [ComponentID: Set<UInt32>] = [:]
+    public private(set) var version: UInt64 = 0
+
+    public mutating func add(archetypeID: ArchetypeID, withIndex index: UInt32) {
+        for id in archetypeID {
+            archetypeIndices[id, default: []].insert(index)
+        }
+        version += 1
+    }
+
+    public mutating func remove(archetypeID: ArchetypeID, withIndex index: UInt32) {
+        for id in archetypeID {
+            archetypeIndices[id]?.remove(index)
+        }
+        version += 1
+    }
+}
+
 public struct World: Sendable {
     private var _id = WorldID()
-    public var id: UInt { _id.id }
+    public var id: UInt64 { _id.id }
 
     public private(set) var entityManager = EntityManager()
-    public private(set) var entities = [(archetypeIndex: Int, entityIndex: Int)?]()
-    public private(set) var archetypes = [Archetype]()
-    public private(set) var indices = [ArchetypeID: Int]()
-    public private(set) var groups = [ComponentID: Set<Int>]()
-    public private(set) var groupsVersion: UInt = 0
 
-    private static let entityArchetypeSchema = ArchetypeSchema(componentType: Entity.self)
+    public private(set) var entities: [EntityMetadata] = []
+
+    public private(set) var archetypes: [Archetype] = []
+
+    public private(set) var archetypeIndexByID: [ArchetypeID: UInt32] = [:]
+
+    public private(set) var archetypeRegistry = ArchetypeRegistry()
+
+    public private(set) var componentGraph = ComponentGraph()
 
     public init() {}
+
+    private static let entityArchetypeSchema = ArchetypeSchema(componentType: Entity.self)
 }
 
 // public
@@ -44,16 +73,26 @@ extension World {
             values[ComponentID(type(of: component))] = component
         }
 
-        let archetypeIndex = archetypeIndex(schema)
+        let archetypeIndex = archetypeRegistry.register(schema: schema)
+        archetypeRegistry.archetypes[archetypeIndex].append([ComponentID : UnsafeRawPointer])
+        // archetypeRegistry.
+        archetypeRegistry.update(at: archetypeIndex) { archetype in
+            archetype.append(values: values)
+        }
         archetypes[archetypeIndex].append(values: values)
 
-        addToGroups(archetypeIndex: archetypeIndex)
+        componentGraph.add(archetypeID: schema.id, withIndex: archetypeIndex)
 
-        let metadata = (
+        let metadata = EntityMetadata(
             archetypeIndex: archetypeIndex,
-            entityIndex: archetypes[archetypeIndex].count - 1
+            indexInArchetype: archetypes[archetypeIndex].count - 1
         )
 
+        if entities.indices.contains(Int(entity.id)) {
+            entities[Int(entity.id)] = metadata
+        } else {
+            entities.append(metadata)
+        }
         if entities.indices.contains(entity.id) {
             entities[entity.id] = metadata
         } else {
@@ -202,7 +241,7 @@ extension World {
         }
     }
 
-    private mutating func archetypeIndex(_ schema: ArchetypeSchema) -> Int {
+    private mutating func archetypeIndex(_ schema: ArchetypeSchema) -> UInt32 {
         if let index = indices[schema.id] {
             return index
         }
