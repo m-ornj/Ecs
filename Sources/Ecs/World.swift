@@ -9,26 +9,34 @@ private final class WorldID: Sendable {
     }()
 }
 
-public struct EntityMetadata: Sendable {
-    let archetypeIndex: Int
-    let entityIndex: Int
+public struct EntityRecord: Sendable {
+    @usableFromInline let archetypeIndex: UInt32
+    @usableFromInline let storage: Entity
 
-    var isNull: Bool { archetypeIndex == -1 }
-    var unwrap: (archetypeIndex: Int, entityIndex: Int) { (archetypeIndex, entityIndex) }
+    // When ALIVE: This is the index of the entity in the archetype
+    // When DEAD:  This is the index of the next dead entity in the recycle list
+    @inlinable public var innerIndex: Int { storage.index }
+    @inlinable public var generation: UInt8 { storage.generation }
 
-    static let null: EntityMetadata = EntityMetadata(archetypeIndex: -1, entityIndex: 0)
+    init(archetypeIndex: UInt32, innerIndex: UInt32, generation: UInt8) {
+        self.archetypeIndex = archetypeIndex
+        self.storage = Entity(index: innerIndex, generation: generation)
+    }
+
+    var unwrap: (archetypeIndex: Int, entityIndex: Int) { (Int(archetypeIndex), innerIndex) }
 }
 
 public struct World: Sendable {
     private var _id = WorldID()
     public var id: UInt { _id.id }
 
-    public private(set) var entityManager = EntityManager()
-    public private(set) var entities: [EntityMetadata] = []
+    public private(set) var entities: [EntityRecord] = []
     public private(set) var archetypes: [Archetype] = []
     public private(set) var archetypeIndexByID: [ArchetypeID: Int] = [:]
     public private(set) var groups: [ComponentID: Set<Int>] = [:]
     public private(set) var groupsVersion: UInt = 0
+
+    private var recycleListHead: UInt32 = Entity.endIndex
 
     public init() {}
 }
@@ -38,8 +46,7 @@ extension World {
     public mutating func create<each T>(
         with components: (repeat each T) = ()
     ) -> Entity {
-        ensureUniqueID()
-        let entity = entityManager.create()
+        let entity = createEntity()
 
         let archetypeID = ArchetypeID(Entity.self, repeat (each T).self)
         var archetypeIndex: Int
@@ -55,21 +62,18 @@ extension World {
 
         addToGroups(archetypeIndex: archetypeIndex)
 
-        let metadata = EntityMetadata(
-            archetypeIndex: archetypeIndex,
-            entityIndex: archetypes[archetypeIndex].count - 1
+        entities[entity.index] = EntityRecord(
+            archetypeIndex: UInt32(archetypeIndex),
+            innerIndex: UInt32(archetypes[archetypeIndex].count - 1),
+            generation: entity.generation
         )
-        if entities.indices.contains(entity.id) {
-            entities[entity.id] = metadata
-        } else {
-            entities.append(metadata)
-        }
 
         return entity
     }
 
     public func isAlive(_ entity: Entity) -> Bool {
-        entityManager.isAlive(entity) && !entities[entity.id].isNull
+        let index = entity.index
+        return entities.indices.contains(index) && entities[index].generation == entity.generation
     }
 
     public mutating func destroy(_ entity: Entity) {
@@ -77,9 +81,9 @@ extension World {
 
         ensureUniqueID()
 
-        let (archetypeIndex, entityIndex) = entities[entity.id].unwrap
+        let (archetypeIndex, entityIndex) = entities[entity.index].unwrap
         removeEntity(archetypeIndex: archetypeIndex, entityIndex: entityIndex)
-        entityManager.destroy(entity)
+        destroyEntity(entity)
     }
 
     public mutating func insert<T>(_ component: T, for entity: Entity) {
@@ -87,7 +91,7 @@ extension World {
         guard isAlive(entity) else { return }
         ensureUniqueID()
 
-        let (oldArchetypeIndex, oldEntityIndex) = entities[entity.id].unwrap
+        let (oldArchetypeIndex, oldEntityIndex) = entities[entity.index].unwrap
 
         guard !archetypes[oldArchetypeIndex].contains(T.self) else {
             archetypes[oldArchetypeIndex][oldEntityIndex] = component
@@ -113,9 +117,10 @@ extension World {
         addToGroups(archetypeIndex: newArchetypeIndex)
 
         removeEntity(archetypeIndex: oldArchetypeIndex, entityIndex: oldEntityIndex)
-        entities[entity.id] = EntityMetadata(
-            archetypeIndex: newArchetypeIndex,
-            entityIndex: archetypes[newArchetypeIndex].count - 1
+        entities[entity.index] = EntityRecord(
+            archetypeIndex: UInt32(newArchetypeIndex),
+            innerIndex: UInt32(archetypes[newArchetypeIndex].count - 1),
+            generation: entity.generation
         )
     }
 
@@ -124,7 +129,7 @@ extension World {
         guard isAlive(entity) else { return }
         ensureUniqueID()
 
-        let (oldArchetypeIndex, oldEntityIndex) = entities[entity.id].unwrap
+        let (oldArchetypeIndex, oldEntityIndex) = entities[entity.index].unwrap
 
         guard archetypes[oldArchetypeIndex].contains(T.self) else { return }
 
@@ -145,15 +150,16 @@ extension World {
         addToGroups(archetypeIndex: newArchetypeIndex)
 
         removeEntity(archetypeIndex: oldArchetypeIndex, entityIndex: oldEntityIndex)
-        entities[entity.id] = EntityMetadata(
-            archetypeIndex: newArchetypeIndex,
-            entityIndex: archetypes[newArchetypeIndex].count - 1
+        entities[entity.index] = EntityRecord(
+            archetypeIndex: UInt32(newArchetypeIndex),
+            innerIndex: UInt32(archetypes[newArchetypeIndex].count - 1),
+            generation: entity.generation
         )
     }
 
     public func get<T>(_ type: T.Type, for entity: Entity) -> T? {
         guard isAlive(entity) else { return nil }
-        let (archetypeIndex, entityIndex) = entities[entity.id].unwrap
+        let (archetypeIndex, entityIndex) = entities[entity.index].unwrap
         guard archetypes[archetypeIndex].contains(T.self) else { return nil }
         return .some(archetypes[archetypeIndex][entityIndex])
     }
@@ -165,7 +171,7 @@ extension World {
     ) rethrows {
         precondition(T.self != Entity.self, "Cannot update Entity of an entity")
         guard isAlive(entity) else { return }
-        let (archetypeIndex, entityIndex) = entities[entity.id].unwrap
+        let (archetypeIndex, entityIndex) = entities[entity.index].unwrap
         guard archetypes[archetypeIndex].contains(T.self) else { return }
 
         ensureUniqueID()
@@ -183,9 +189,11 @@ extension World {
         containing included: Set<ComponentID>,
         excluding excluded: Set<ComponentID>
     ) -> Set<Int> {
+        let entityComponentID = ComponentID(Entity.self)
+
         var groups: [Set<Int>] = []
         for id in included {
-            if id == Entity.componentID && included.count > 1 {
+            if id == entityComponentID && included.count > 1 {
                 // can skip Entity because every Archetype has it anyways
                 // unless Entity is the only component we're looking for
                 continue
@@ -222,16 +230,62 @@ extension World {
         }
     }
 
+    private mutating func createEntity() -> Entity {
+        ensureUniqueID()
+
+        if recycleListHead != Entity.endIndex {
+            let recycledIndex = recycleListHead
+            let metadata = entities[Int(recycledIndex)]
+
+            recycleListHead = UInt32(metadata.innerIndex)
+
+            return Entity(index: recycleListHead, generation: metadata.generation)
+        } else {
+            let newIndex = UInt32(entities.endIndex)
+            precondition(newIndex < Entity.endIndex, "Reached the limit for Entity index")
+            entities.append(
+                EntityRecord(
+                    archetypeIndex: .max,
+                    innerIndex: Entity.endIndex,
+                    generation: 0
+                )
+            )
+            return Entity(index: newIndex, generation: 0)
+        }
+    }
+
+    private mutating func destroyEntity(_ entity: Entity) {
+        guard isAlive(entity) else { return }
+        ensureUniqueID()
+
+        let index = entity.index
+        let record = entities[index]
+
+        entities[index] = EntityRecord(
+            archetypeIndex: .max,
+            innerIndex: recycleListHead,
+            generation: record.generation &+ 1
+        )
+
+        recycleListHead = UInt32(index)
+    }
+
     private mutating func removeEntity(archetypeIndex: Int, entityIndex: Int) {
         let lastEntityIndex = archetypes[archetypeIndex].count - 1
         let entity: Entity = archetypes[archetypeIndex][entityIndex]
         let lastEntity: Entity = archetypes[archetypeIndex][lastEntityIndex]
         archetypes[archetypeIndex].swapRemove(at: entityIndex)
-        entities[lastEntity.id] = EntityMetadata(
-            archetypeIndex: archetypeIndex,
-            entityIndex: entityIndex
+
+        entities[lastEntity.index] = EntityRecord(
+            archetypeIndex: UInt32(archetypeIndex),
+            innerIndex: UInt32(entityIndex),
+            generation: lastEntity.generation
         )
-        entities[entity.id] = .null
+        entities[entity.index] = EntityRecord(
+            archetypeIndex: .max,
+            innerIndex: Entity.endIndex,
+            generation: entity.generation
+        )
 
         if archetypes[archetypeIndex].count == 0 {
             removeFromGroups(archetypeIndex: archetypeIndex)
