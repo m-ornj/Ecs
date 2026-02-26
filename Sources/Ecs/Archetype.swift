@@ -1,156 +1,129 @@
-public typealias ArchetypeID = [ComponentID]
+public typealias ComponentID = ObjectIdentifier
 
-public struct ArchetypeSchema: Sendable {
-    public let layout: [ComponentLayout]
-    public let id: [ComponentID]
+public struct ArchetypeID: Sendable, Hashable {
+    public let componentIDs: [ComponentID]
 
-    public init<T: Component>(componentType: T.Type) {
-        self.layout = [ComponentLayout(T.self)]
-        self.id = [ComponentID(T.self)]
+    public init<each T>(_ types: repeat (each T).Type) {
+        var count = 0
+        for _ in repeat (each T).self { count += 1 }
+        var componentIDs: [ComponentID] = []
+        componentIDs.reserveCapacity(count)
+        for T in repeat (each T).self { componentIDs.append(ComponentID(T.self)) }
+        componentIDs.sort()
+        for i in 0..<componentIDs.count - 1 {
+            precondition(componentIDs[i] != componentIDs[i + 1], "Duplicate component")
+        }
+        self.componentIDs = componentIDs
     }
 
-    /// Does NOT sort or de-duplicate the arrays
-    private init(layout: [ComponentLayout], id: [ComponentID]) {
-        self.layout = layout
-        self.id = id
+    /// Does NOT sort or de-duplicate the array
+    private init(componentIDs: [ComponentID]) {
+        self.componentIDs = componentIDs
     }
 
-    public func adding<T: Component>(_ type: T.Type) -> ArchetypeSchema {
-        let newLayout = ComponentLayout(T.self)
-        let newID = ComponentID(T.self)
+    public func adding<T>(_ type: T.Type) -> Self {
+        let newComponentID = ComponentID(T.self)
 
-        var index = id.endIndex
-        for i in 0...id.count {
-            if newID > id[i] {
+        var index = componentIDs.endIndex
+        for i in 0..<componentIDs.count {
+            precondition(newComponentID != componentIDs[i], "Duplicate component \(T.self)")
+            if newComponentID < componentIDs[i] {
                 index = i
                 break
             }
         }
 
-        var layout = layout
-        var id = id
-        layout.insert(newLayout, at: index)
-        id.insert(newID, at: index)
-        return ArchetypeSchema(layout: layout, id: id)
+        var componentIDs = componentIDs
+        componentIDs.insert(newComponentID, at: index)
+        return Self(componentIDs: componentIDs)
     }
 
-    public func removing<T: Component>(_ type: T.Type) -> ArchetypeSchema {
-        let newID = ComponentID(T.self)
+    public func removing<T>(_ type: T.Type) -> Self {
+        let componentID = ComponentID(T.self)
 
-        var layout = layout
-        var id = id
-        for i in 0..<id.count {
-            if newID == id[i] {
-                layout.remove(at: i)
-                id.remove(at: i)
-                break
-            }
-        }
-        return ArchetypeSchema(layout: layout, id: id)
+        var componentIDs = componentIDs
+        componentIDs.removeAll { $0 == componentID }
+        return Self(componentIDs: componentIDs)
     }
 }
 
 public struct Archetype: Sendable {
-    public let schema: ArchetypeSchema
-    private var components: [ComponentArray] = []
-    private var indices: [ComponentID: Int] = [:]
+    public let id: ArchetypeID
+    public private(set) var components: [RawArray] = []
+    public private(set) var indices: [ComponentID: Int] = [:]
 
     public var count: Int { components.first?.count ?? 0 }
 
-    public init(schema: ArchetypeSchema) {
-        self.schema = schema
-        self.components.reserveCapacity(schema.layout.count)
-        for i in 0..<schema.layout.count {
-            let id = schema.id[i]
-            components.append(ComponentArray(layout: schema.layout[i]))
-            indices[id] = components.count - 1
+    public init<each T>(_ t: repeat (each T).Type) {
+        id = ArchetypeID(repeat (each T).self)
+        components.reserveCapacity(id.componentIDs.count)
+        indices.reserveCapacity(id.componentIDs.count)
+        for T in repeat (each T).self {
+            indices[ComponentID(T.self)] = components.endIndex
+            components.append(RawArray(T.self))
         }
-    }
-
-    public mutating func reserveCapacity(_ minimumCapacity: Int) {
-        for i in 0..<components.count {
-            components[i].reserveCapacity(minimumCapacity)
-        }
-    }
-
-    public mutating func append(_ data: [ComponentID: UnsafeRawPointer]) {
-        for i in 0..<components.count {
-            let id = schema.id[i]
-            guard let pointer = data[id] else {
-                preconditionFailure("Component \(id) not found")
-            }
-            components[i].append(pointer)
-        }
-    }
-
-    public mutating func append(values: [ComponentID: Any]) {
-        for i in 0..<components.count {
-            let id = schema.id[i]
-            guard let value = values[id] else {
-                preconditionFailure("Component \(id) not found")
-            }
-            components[i].append(value: value)
-        }
-    }
-
-    public mutating func removeLast() {
-        for i in 0..<components.count {
-            components[i].removeLast()
-        }
-    }
-
-    public mutating func moveLast(to index: Int) {
-        for i in 0..<components.count {
-            components[i].moveLast(to: index)
-        }
-    }
-
-    public func read(at index: Int) -> [ComponentID: UnsafeRawPointer] {
-        precondition((0..<count).contains(index), "Index out of bounds")
-
-        var data: [ComponentID: UnsafeRawPointer] = [:]
-        for i in 0..<components.count {
-            let id = schema.id[i]
-            data[id] = components[i].pointer(at: index)
-        }
-        return data
-    }
-
-    public func contains<T: Component>(_ type: T.Type) -> Bool {
-        let id = ComponentID(T.self)
-        return indices[id] != nil
-    }
-
-    public func get<T: Component>(_ type: T.Type, at index: Int) -> T? {
-        guard let componentIndex = indices[ComponentID(T.self)] else { return nil }
-        let value: T = components[componentIndex][index]
-        return value
-    }
-
-    public subscript<T: Component>(_ index: Int) -> T {
-        get {
-            let componentIndex = self.index(of: T.self)
-            return components[componentIndex][index]
-        }
-        mutating set(newValue) {
-            let componentIndex = self.index(of: T.self)
-            components[componentIndex][index] = newValue
-        }
-    }
-
-    public func buffer<T: Component>(of type: T.Type) -> UnsafeBufferPointer<T> {
-        let componentIndex = index(of: T.self)
-        return components[componentIndex].buffer(of: T.self)
-    }
-
-    public mutating func buffer<T: Component>(of type: T.Type) -> UnsafeMutableBufferPointer<T> {
-        let componentIndex = index(of: T.self)
-        return components[componentIndex].buffer(of: T.self)
     }
 }
 
+// public
 extension Archetype {
-    private func index<T: Component>(of type: T.Type) -> Int {
+    public func contains<T>(_ t: T.Type) -> Bool {
+        let componentID = ComponentID(T.self)
+        return indices[componentID] != nil
+    }
+
+    public mutating func append<each T>(_ values: repeat each T) {
+        for (value, T) in repeat (each values, (each T).self) {
+            let componentIndex = componentIndex(of: T.self)
+            components[componentIndex].append(value)
+        }
+    }
+
+    public mutating func append(from other: Self, at position: Int) {
+        for (componentID, index) in indices {
+            if let otherIndex = other.indices[componentID] {
+                components[index].append(from: other.components[otherIndex].pointer(at: position))
+            }
+        }
+    }
+
+    public subscript<T>(_ position: Int) -> T {
+        get {
+            let componentIndex = componentIndex(of: T.self)
+            return components[componentIndex][position]
+        }
+        mutating set(value) {
+            let componentIndex = componentIndex(of: T.self)
+            components[componentIndex][position] = value
+        }
+    }
+
+    public func buffer<T>(of type: T.Type) -> UnsafeBufferPointer<T> {
+        let index = componentIndex(of: T.self)
+        return components[index].buffer().assumingMemoryBound(to: T.self)
+    }
+
+    public mutating func buffer<T>(of type: T.Type) -> UnsafeMutableBufferPointer<T> {
+        let index = componentIndex(of: T.self)
+        return components[index].buffer().assumingMemoryBound(to: T.self)
+    }
+
+    public mutating func swapRemove(at position: Int) {
+        for i in components.indices {
+            components[i].swapRemove(at: position)
+        }
+    }
+}
+
+// private
+extension Archetype {
+    private init(id: ArchetypeID, components: [RawArray], indices: [ComponentID: Int]) {
+        self.id = id
+        self.components = components
+        self.indices = indices
+    }
+
+    private func componentIndex<T>(of type: T.Type) -> Int {
         let id = ComponentID(T.self)
         guard let index = indices[id] else {
             preconditionFailure("Component \(T.self) not found in archetype.")
@@ -159,43 +132,43 @@ extension Archetype {
     }
 }
 
-public struct ArchetypeRegistry: Sendable {
-    public private(set) var archetypes: [Archetype] = []
-    public private(set) var indexByID: [ArchetypeID: UInt32] = [:]
+extension Archetype {
+    public func adding<T>(_ t: T.Type, newID: ArchetypeID) -> Self {
+        let componentID = ComponentID(T.self)
+        precondition(indices[componentID] == nil, "Adding a duplicate type \(T.self)")
 
-    public mutating func register(schema: ArchetypeSchema) -> UInt32 {
-        if let index = indexByID[schema.id] {
-            return index
+        var indices = indices
+        var components = components
+        for i in components.indices {
+            components[i].removeAll()
         }
-        let archetype = Archetype(schema: schema)
-        archetypes.append(archetype)
-        let index = UInt32(archetypes.count - 1)
-        indexByID[archetype.schema.id] = index
-        return index
+
+        indices[componentID] = components.endIndex
+        components.reserveCapacity(components.count + 1)
+        components.append(RawArray(T.self))
+
+        return Self(id: newID, components: components, indices: indices)
     }
-}
 
-extension ArchetypeRegistry: RandomAccessCollection {
-    public typealias Index = UInt32
-    public typealias Element = Archetype
+    public func removing<T>(_ t: T.Type, newID: ArchetypeID) -> Self {
+        let componentID = ComponentID(T.self)
+        let index = componentIndex(of: T.self)
 
-    public var startIndex: UInt32 { UInt32(archetypes.startIndex) }
-    public var endIndex: UInt32 { UInt32(archetypes.endIndex) }
+        var indices = indices
+        var components = components
 
-    public subscript(_ position: UInt32) -> Archetype {
-        get {
-            return archetypes[Int(position)]
+        let lastIndex = components.count - 1
+        let lastComponentID = indices.first { $0.value == lastIndex }!.key
+
+        components.swapAt(index, components.count - 1)
+        indices[lastComponentID] = index
+        indices.removeValue(forKey: componentID)
+        components.removeLast()
+
+        for i in components.indices {
+            components[i].removeAll()
         }
-        mutating set(newValue) {
-            let oldID = self.archetypes[Int(position)].schema.id
-            let newID = newValue.schema.id
 
-            archetypes[Int(position)] = newValue
-
-            if oldID != newID {
-                indexByID.removeValue(forKey: oldID)
-            }
-            indexByID[newID] = UInt32(position)
-        }
+        return Self(id: newID, components: components, indices: indices)
     }
 }

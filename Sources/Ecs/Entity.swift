@@ -1,10 +1,10 @@
-public typealias EntityID = UInt32
+public typealias EntityID = Int
 
 public struct Entity: BitwiseCopyable, Hashable, Sendable {
     public let id: EntityID
-    public let generation: UInt32
+    public let generation: Int
 
-    fileprivate init(id: EntityID, generation: UInt32) {
+    fileprivate init(id: EntityID, generation: Int) {
         self.id = id
         self.generation = generation
     }
@@ -13,14 +13,14 @@ public struct Entity: BitwiseCopyable, Hashable, Sendable {
 }
 
 public struct EntityManager: Sendable {
-    private var generations: [UInt32] = []
+    private var generations: [Int] = []
     private var recycled: [EntityID] = []
 
     public mutating func create() -> Entity {
         if let id = recycled.popLast() {
-            return Entity(id: id, generation: generations[Int(id)])
+            return Entity(id: id, generation: generations[id])
         } else {
-            let id = UInt32(generations.count)
+            let id = generations.count
             generations.append(0)
             return Entity(id: id, generation: 0)
         }
@@ -28,12 +28,11 @@ public struct EntityManager: Sendable {
 
     public mutating func destroy(_ entity: Entity) {
         guard isAlive(entity) else { return }
-        generations[Int(entity.id)] += 1
+        generations[entity.id] += 1
         recycled.append(entity.id)
     }
 
     public func isAlive(_ entity: Entity) -> Bool {
-        let index = Int(entity.id)
-        return generations.indices.contains(index) && generations[index] == entity.generation
+        generations.indices.contains(entity.id) && generations[entity.id] == entity.generation
     }
 }

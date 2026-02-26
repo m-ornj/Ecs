@@ -1,4 +1,4 @@
-public struct View<each T: Component>: Sendable {
+public struct View<each T>: Sendable {
     private let included: Set<ComponentID>
     private let excluded: Set<ComponentID>
     private var archetypes: [Int] = []
@@ -67,7 +67,7 @@ public struct View<each T: Component>: Sendable {
     }
 }
 
-public struct UnsafeView<each T: Component>: @unchecked Sendable {
+public struct UnsafeView<each T>: @unchecked Sendable {
     public let buffers: [(repeat UnsafeMutableBufferPointer<each T>)]
     public let count: Int
 
@@ -97,7 +97,7 @@ extension UnsafeView: Sequence {
     }
 }
 
-public struct UnsafeViewIterator<each T: Component>: IteratorProtocol {
+public struct UnsafeViewIterator<each T>: IteratorProtocol {
     var buffers: [(repeat UnsafeMutableBufferPointer<each T>)]
     var entityIndex = 0
     var entitiesCount = 0
@@ -138,7 +138,7 @@ public struct UnsafeViewIterator<each T: Component>: IteratorProtocol {
     }
 }
 
-public struct ViewBuilder<each T: Component>: Sendable {
+public struct ViewBuilder<each T>: Sendable {
     private let included: Set<ComponentID>
     private let excluded: Set<ComponentID>
 
@@ -147,7 +147,7 @@ public struct ViewBuilder<each T: Component>: Sendable {
         self.excluded = excluded
     }
 
-    public func including<each U: Component>(_ type: repeat (each U).Type) -> Self {
+    public func including<each U>(_ type: repeat (each U).Type) -> Self {
         var included = included
         for type in repeat (each U).self {
             included.insert(ComponentID(type.self))
@@ -155,7 +155,7 @@ public struct ViewBuilder<each T: Component>: Sendable {
         return Self(included: included, excluded: excluded)
     }
 
-    public func excluding<each U: Component>(_ type: repeat (each U).Type) -> Self {
+    public func excluding<each U>(_ type: repeat (each U).Type) -> Self {
         var excluded = excluded
         for type in repeat (each U).self {
             excluded.insert(ComponentID(type.self))
