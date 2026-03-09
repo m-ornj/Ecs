@@ -7,7 +7,7 @@ import Testing
 struct RawArrayTests {
     @Test
     func appendRemove() {
-        var rawArray = RawArray(String.self)
+        var rawArray = RawArray(of: String.self)
         #expect(rawArray.count == 0)
         #expect(rawArray.capacity == 1)
 
@@ -53,7 +53,7 @@ struct RawArrayTests {
     }
 
     @Test func capacity() {
-        var rawArray = RawArray(Int.self)
+        var rawArray = RawArray(of: Int.self)
         #expect(rawArray.count == 0)
         #expect(rawArray.capacity == 1)
 
@@ -90,7 +90,7 @@ struct RawArrayTests {
     }
 
     @Test func buffers() {
-        var rawArray = RawArray(String.self)
+        var rawArray = RawArray(of: String.self)
         var array: [String] = []
         for i in 0..<10 {
             let str = "String_\(i)"
@@ -121,8 +121,8 @@ struct RawArrayTests {
             #expect(rawArray[i] == str)
         }
 
-        let mutableBuffer: UnsafeMutableBufferPointer = rawArray.buffer().assumingMemoryBound(
-            to: String.self)
+        let mutableBuffer: UnsafeMutableBufferPointer = rawArray.buffer()
+            .assumingMemoryBound(to: String.self)
         array.removeAll()
         for i in mutableBuffer.indices {
             let str = "some value #\(i)"
@@ -151,7 +151,7 @@ struct RawArrayTests {
 
     @Test
     func cow() {
-        var rawArray = RawArray(String.self)
+        var rawArray = RawArray(of: String.self)
         for i in 0..<10 { rawArray.append("String_\(i)") }
 
         var copy = rawArray

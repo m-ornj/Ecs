@@ -1,3 +1,4 @@
+// MARK: RawArrayFunctions
 protocol RawArrayFunctions {
     func initialize(from: UnsafeRawPointer, to: UnsafeMutableRawPointer, count: Int)
     func moveInitialize(from: UnsafeMutableRawPointer, to: UnsafeMutableRawPointer, count: Int)
@@ -42,16 +43,17 @@ struct RawArrayFunctionsImpl<T>: RawArrayFunctions {
     }
 }
 
-public final class RawArrayStorage {
+// MARK: RawArrayStorage
+final class RawArrayStorage {
     let fn: RawArrayFunctions
     let stride: Int
     let alignment: Int
 
-    public private(set) var pointer: UnsafeMutableRawPointer
-    public private(set) var capacity: Int = 1
-    public private(set) var count: Int = 0
+    private(set) var pointer: UnsafeMutableRawPointer
+    private(set) var capacity: Int = 1
+    private(set) var count: Int = 0
 
-    public init<T>(_ t: T.Type) {
+    init<T>(of t: T.Type, capacity: Int = 1) {
         self.fn = RawArrayFunctionsImpl<T>()
         self.stride = MemoryLayout<T>.stride
         self.alignment = MemoryLayout<T>.alignment
@@ -59,6 +61,7 @@ public final class RawArrayStorage {
             byteCount: stride * capacity,
             alignment: alignment
         )
+        self.capacity = capacity
     }
 
     init(
@@ -84,11 +87,12 @@ public final class RawArrayStorage {
 }
 
 extension RawArrayStorage {
-    public func clone() -> RawArrayStorage {
+    func clone() -> RawArrayStorage {
         let pointer = UnsafeMutableRawPointer.allocate(
             byteCount: stride * capacity,
             alignment: alignment
         )
+        fn.initialize(from: self.pointer, to: pointer, count: count)
         return RawArrayStorage(
             fn: fn,
             stride: stride,
@@ -99,7 +103,7 @@ extension RawArrayStorage {
         )
     }
 
-    public func reserveCapacity(_ minimumCapacity: Int) {
+    func reserveCapacity(_ minimumCapacity: Int) {
         guard capacity < minimumCapacity else { return }
 
         let newCapacity = Swift.max(minimumCapacity, capacity * 2)
@@ -117,27 +121,27 @@ extension RawArrayStorage {
         self.capacity = newCapacity
     }
 
-    public func append(from source: UnsafeRawPointer) {
+    func append(from source: UnsafeRawPointer) {
         reserveCapacity(count + 1)
         let destination = pointer.advanced(by: stride * count)
         fn.initialize(from: source, to: destination, count: 1)
         count += 1
     }
 
-    public func append<T>(_ value: T) {
+    func append<T>(_ value: T) {
         reserveCapacity(count + 1)
         let destination = pointer.assumingMemoryBound(to: T.self).advanced(by: count)
         destination.update(repeating: value, count: 1)
         count += 1
     }
 
-    public func removeLast(_ k: Int = 1) {
+    func removeLast(_ k: Int = 1) {
         let pointer = pointer.advanced(by: stride * (count - k))
         fn.deinitialize(pointer: pointer, count: k)
         count -= k
     }
 
-    public func swapRemove(at position: Int) {
+    func swapRemove(at position: Int) {
         let lastPosition = count - 1
         let source = pointer.advanced(by: stride * lastPosition)
         let destination = pointer.advanced(by: stride * position)
@@ -149,7 +153,7 @@ extension RawArrayStorage {
         count -= 1
     }
 
-    public func removeAll(keepingCapacity keepCapacity: Bool = false) {
+    func removeAll(keepingCapacity keepCapacity: Bool = false) {
         fn.deinitialize(pointer: pointer, count: count)
         count = 0
         if !keepCapacity {
@@ -164,10 +168,10 @@ extension RawArrayStorage {
 }
 
 extension RawArrayStorage: RandomAccessCollection {
-    public var startIndex: Int { 0 }
-    public var endIndex: Int { count }
+    var startIndex: Int { 0 }
+    var endIndex: Int { count }
 
-    public subscript<T>(_ position: Int) -> T {
+    subscript<T>(_ position: Int) -> T {
         get {
             pointer.assumingMemoryBound(to: T.self).advanced(by: position).pointee
         }
@@ -181,65 +185,70 @@ extension RawArrayStorage: RandomAccessCollection {
     }
 }
 
+// MARK: RawArray
 public struct RawArray: @unchecked Sendable {
-    @usableFromInline var storage: RawArrayStorage
-
-    public init<T>(_ t: T.Type) {
-        storage = RawArrayStorage(T.self)
-    }
+    var storage: RawArrayStorage
 }
 
-// public
 extension RawArray {
-    @inlinable public mutating func reserveCapacity(_ minimumCapacity: Int) {
+    public init<T>(of t: T.Type, capacity: Int = 1) {
+        storage = RawArrayStorage(of: T.self, capacity: capacity)
+    }
+
+    public mutating func reserveCapacity(_ minimumCapacity: Int) {
         storage.reserveCapacity(minimumCapacity)
     }
 
-    @inlinable public mutating func append(from source: UnsafeRawPointer) {
+    public mutating func append(from source: UnsafeRawPointer) {
         ensureUnique()
         storage.append(from: source)
     }
 
-    @inlinable public mutating func append<T>(_ value: T) {
+    public mutating func append<T>(_ value: T) {
         ensureUnique()
         storage.append(value)
     }
 
-    @inlinable public mutating func removeLast(_ k: Int = 1) {
+    public mutating func removeLast(_ k: Int = 1) {
         ensureUnique()
         storage.removeLast(k)
     }
 
-    @inlinable public mutating func swapRemove(at position: Int) {
+    public mutating func swapRemove(at position: Int) {
         ensureUnique()
         storage.swapRemove(at: position)
     }
 
-    @inlinable public mutating func removeAll(keepingCapacity keepCapacity: Bool = false) {
+    public mutating func removeAll(keepingCapacity keepCapacity: Bool = false) {
         ensureUnique()
         storage.removeAll(keepingCapacity: keepCapacity)
     }
 
-    public func pointer(at position: Int) -> UnsafeRawPointer {
+    public func pointer(at position: Int = 0) -> UnsafeRawPointer {
         UnsafeRawPointer(storage.pointer.advanced(by: position * storage.stride))
     }
 
-    public mutating func pointer(at position: Int) -> UnsafeMutableRawPointer {
-        storage.pointer.advanced(by: position * storage.stride)
+    public mutating func pointer(at position: Int = 0) -> UnsafeMutableRawPointer {
+        ensureUnique()
+        return storage.pointer.advanced(by: position * storage.stride)
     }
 
     public func buffer() -> UnsafeRawBufferPointer {
-        UnsafeRawBufferPointer(start: storage.pointer, count: storage.count * storage.stride)
+        return UnsafeRawBufferPointer(
+            start: storage.pointer,
+            count: storage.count * storage.stride
+        )
     }
 
     public mutating func buffer() -> UnsafeMutableRawBufferPointer {
-        UnsafeMutableRawBufferPointer(start: storage.pointer, count: storage.count * storage.stride)
+        ensureUnique()
+        return UnsafeMutableRawBufferPointer(
+            start: storage.pointer,
+            count: storage.count * storage.stride
+        )
     }
-}
 
-// private
-extension RawArray {
-    @usableFromInline mutating func ensureUnique() {
+    private mutating func ensureUnique() {
         if !isKnownUniquelyReferenced(&storage) {
             storage = storage.clone()
         }
@@ -247,17 +256,17 @@ extension RawArray {
 }
 
 extension RawArray: RandomAccessCollection {
-    @inlinable public var startIndex: Int { storage.startIndex }
-    @inlinable public var endIndex: Int { storage.endIndex }
-    @inlinable public var capacity: Int { storage.capacity }
+    public var startIndex: Int { storage.startIndex }
+    public var endIndex: Int { storage.endIndex }
+    public var capacity: Int { storage.capacity }
 
-    @inlinable public subscript<T>(_ position: Int) -> T {
+    public subscript<T>(_ position: Int) -> T {
         get {
             storage[position]
         }
-        mutating set(source) {
+        mutating set(value) {
             ensureUnique()
-            storage[position] = source
+            storage[position] = value
         }
     }
 }

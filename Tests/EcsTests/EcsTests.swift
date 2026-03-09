@@ -53,18 +53,15 @@ struct EcsTests {
         #expect(position3?.x == 50)
         #expect(position3?.y == 60)
 
-        var entitiesWithPosition: [Entity] = []
-        var entitiesWithVelocity: [Entity] = []
-
-        ViewBuilder<Entity>()
+        var entitiesWithPosition = ViewBuilder<Entity>()
             .including(Position.self)
             .view(into: world)
-            .forEach(in: world) { entitiesWithPosition.append($0) }
+            .map { $1[$0] }
 
-        ViewBuilder<Entity>()
+        var entitiesWithVelocity = ViewBuilder<Entity>()
             .including(Velocity.self)
             .view(into: world)
-            .forEach(in: world) { entitiesWithVelocity.append($0) }
+            .map { $1[$0] }
 
         #expect(entitiesWithPosition.count == 3)
         #expect(entitiesWithPosition.contains(entity1))
@@ -84,18 +81,15 @@ struct EcsTests {
         #expect(removedPosition2 == nil)
         #expect(removedVelocity2 == nil)
 
-        entitiesWithPosition.removeAll()
-        entitiesWithVelocity.removeAll()
-
-        ViewBuilder<Entity>()
+        entitiesWithPosition = ViewBuilder<Entity>()
             .including(Position.self)
             .view(into: world)
-            .forEach(in: world) { entitiesWithPosition.append($0) }
+            .map { $1[$0] }
 
-        ViewBuilder<Entity>()
+        entitiesWithVelocity = ViewBuilder<Entity>()
             .including(Velocity.self)
             .view(into: world)
-            .forEach(in: world) { entitiesWithVelocity.append($0) }
+            .map { $1[$0] }
 
         #expect(entitiesWithPosition.count == 2)
         #expect(entitiesWithPosition.contains(entity1))
@@ -127,7 +121,7 @@ struct EcsTests {
         world.insert(Flag(value: true), for: e1)
         #expect(world.get(Flag.self, for: e1)?.value == true)
 
-        world.update(Flag.self, for: e2) { $0.value = false }
+        world.update(Flag.self, of: e2) { $0.value = false }
         #expect(world.get(Flag.self, for: e2)?.value == false)
 
         world.destroy(e1)
@@ -154,69 +148,61 @@ struct EcsTests {
         var expected: Int
 
         count = 0
-        ViewBuilder<DivBy2, DivBy3, DivBy5>()
-            .view(into: world)
-            .forEach(in: world) { a, b, c in
-                #expect(a.n == b.n && b.n == c.n)
-                let n = a.n
-                #expect(n % 2 == 0)
-                #expect(n % 3 == 0)
-                #expect(n % 5 == 0)
-                count += 1
-            }
+        for (i, (a, b, c)) in ViewBuilder<DivBy2, DivBy3, DivBy5>().view(into: world) {
+            let (a, b, c) = (a[i], b[i], c[i])
+            #expect(a.n == b.n && b.n == c.n)
+            let n = a.n
+            #expect(n % 2 == 0)
+            #expect(n % 3 == 0)
+            #expect(n % 5 == 0)
+            count += 1
+        }
         expected = (0..<100).filter { $0 % 2 == 0 && $0 % 3 == 0 && $0 % 5 == 0 }.count
         #expect(count == expected)
 
         count = 0
-        ViewBuilder<DivBy2, DivBy5>()
-            .excluding(DivBy3.self)
-            .view(into: world)
-            .forEach(in: world) { a, b in
-                #expect(a.n == b.n)
-                let n = a.n
-                #expect(n % 2 == 0)
-                #expect(n % 3 != 0)
-                #expect(n % 5 == 0)
-                count += 1
-            }
+        for (i, (a, b)) in ViewBuilder<DivBy2, DivBy5>().excluding(DivBy3.self).view(into: world) {
+            let (a, b) = (a[i], b[i])
+            #expect(a.n == b.n)
+            let n = a.n
+            #expect(n % 2 == 0)
+            #expect(n % 3 != 0)
+            #expect(n % 5 == 0)
+            count += 1
+        }
         expected = (0..<100).filter { $0 % 2 == 0 && $0 % 3 != 0 && $0 % 5 == 0 }.count
         #expect(count == expected)
 
         count = 0
-        ViewBuilder<DivBy5>()
-            .excluding(DivBy2.self, DivBy3.self)
-            .view(into: world)
-            .forEach(in: world) { a in
-                #expect(a.n % 2 != 0)
-                #expect(a.n % 3 != 0)
-                #expect(a.n % 5 == 0)
-                count += 1
-            }
+        for (i, a) in ViewBuilder<DivBy5>().excluding(DivBy2.self, DivBy3.self).view(into: world) {
+            let a = a[i]
+            #expect(a.n % 2 != 0)
+            #expect(a.n % 3 != 0)
+            #expect(a.n % 5 == 0)
+            count += 1
+        }
         expected = (0..<100).filter { $0 % 2 != 0 && $0 % 3 != 0 && $0 % 5 == 0 }.count
         #expect(count == expected)
 
-        count = 0
-        ViewBuilder<Entity>()
+        count = ViewBuilder<Entity>()
             .including(DivBy3.self)
             .excluding(DivBy5.self)
             .view(into: world)
-            .forEach(in: world) { _ in count += 1 }
+            .count()
         expected = (0..<100).filter { $0 % 3 == 0 && $0 % 5 != 0 }.count
         #expect(count == expected)
 
-        count = 0
-        ViewBuilder<Entity>()
+        count = ViewBuilder<Entity>()
             .excluding(DivBy2.self, DivBy3.self, DivBy5.self)
             .view(into: world)
-            .forEach(in: world) { _ in count += 1 }
+            .count()
         expected = (0..<100).filter { $0 % 2 != 0 && $0 % 3 != 0 && $0 % 5 != 0 }.count
         #expect(count == expected)
 
-        count = 0
-        ViewBuilder<DivBy2>()
+        count = ViewBuilder<DivBy2>()
             .excluding(Entity.self)
             .view(into: world)
-            .forEach(in: world) { _ in count += 1 }
+            .count()
         expected = 0
         #expect(count == expected)
 
@@ -251,49 +237,44 @@ struct EcsTests {
         #expect(world.get(Enemy.self, for: entity2) != nil)
         #expect(world.get(Enemy.self, for: entity3) == nil)
 
-        var actors: [Entity] = []
-        ViewBuilder<Entity>()
+        let actors = ViewBuilder<Entity>()
             .including(Actor.self)
             .view(into: world)
-            .forEach(in: world) { actors.append($0) }
+            .map { $1[$0] }
         #expect(actors.count == 3)
         #expect(actors.contains(entity1))
         #expect(actors.contains(entity2))
         #expect(actors.contains(entity3))
 
-        var players: [Entity] = []
-        ViewBuilder<Entity>()
+        let players = ViewBuilder<Entity>()
             .including(Player.self)
             .view(into: world)
-            .forEach(in: world) { players.append($0) }
+            .map { $1[$0] }
         #expect(players.count == 1)
         #expect(players.contains(entity1))
 
-        var enemies: [Entity] = []
-        ViewBuilder<Entity>()
+        let enemies = ViewBuilder<Entity>()
             .including(Enemy.self)
             .view(into: world)
-            .forEach(in: world) { enemies.append($0) }
+            .map { $1[$0] }
         #expect(enemies.count == 1)
         #expect(enemies.contains(entity2))
 
-        var neutrals: [Entity] = []
-        ViewBuilder<Entity>()
+        var neutrals = ViewBuilder<Entity>()
             .including(Actor.self)
             .excluding(Enemy.self, Player.self)
             .view(into: world)
-            .forEach(in: world) { neutrals.append($0) }
+            .map { $1[$0] }
         #expect(neutrals.count == 1)
         #expect(neutrals.contains(entity3))
 
         world.remove(Enemy.self, for: entity2)
 
-        neutrals.removeAll()
-        ViewBuilder<Entity>()
+        neutrals = ViewBuilder<Entity>()
             .including(Actor.self)
             .excluding(Enemy.self, Player.self)
             .view(into: world)
-            .forEach(in: world) { neutrals.append($0) }
+            .map { $1[$0] }
         #expect(neutrals.count == 2)
         #expect(neutrals.contains(entity2))
         #expect(neutrals.contains(entity3))
@@ -301,63 +282,6 @@ struct EcsTests {
         world.destroy(entity1)
         world.destroy(entity2)
         world.destroy(entity3)
-    }
-
-    @Test
-    mutating func viewCaching() {
-        struct Foo { var value: Int }
-        struct Bar { var value: Int }
-
-        let entities = (0..<10).map { _ in
-            world.create()
-        }
-
-        for (i, e) in entities.enumerated() {
-            world.insert(Foo(value: i), for: e)
-            #expect(world.get(Foo.self, for: e)?.value == i)
-        }
-
-        var view = ViewBuilder<Entity, Foo>().view(into: world)
-        #expect(view.count == entities.count)
-
-        var visited: Int
-
-        visited = 0
-        view.forEach(in: world) { _, _ in visited += 1 }
-        #expect(visited == entities.count)
-        #expect(view.isValid(for: world))
-
-        let increase = 100
-        view.forEach(in: &world) { entity, foo in
-            foo.pointee.value += increase
-        }
-        #expect(view.isValid(for: world))
-        for (i, e) in entities.enumerated() {
-            #expect(world.get(Foo.self, for: e)?.value == i + increase)
-        }
-
-        for (i, e) in entities.dropLast(5).enumerated() {
-            world.insert(Bar(value: i), for: e)
-        }
-        #expect(!view.isValid(for: world))
-        view.rebuild(for: world)
-        #expect(view.isValid(for: world))
-        #expect(view.count == entities.count)
-
-        visited = 0
-        view.forEach(in: world) { _, _ in visited += 1 }
-        #expect(visited == entities.count)
-
-        for entity in entities {
-            world.destroy(entity)
-        }
-
-        #expect(!view.isValid(for: world))
-        view.rebuild(for: world)
-        #expect(view.count == 0)
-        visited = 0
-        view.forEach(in: world) { _, _ in visited += 1 }
-        #expect(visited == 0)
     }
 
     @Test
@@ -373,22 +297,22 @@ struct EcsTests {
         }
 
         let update: (inout World) -> Void = { world in
-            var grounded: [Entity] = []
-            ViewBuilder<Position, Velocity>()
-                .excluding(Grounded.self)
-                .view(into: world)
-                .forEach(in: &world) { pos, vel in
-                    pos.pointee.y += vel.pointee.dy
+            do {
+                let view = ViewBuilder<Position, Velocity>()
+                    .excluding(Grounded.self)
+                    .view(into: &world)
+                for (i, (positions, velocities)) in view {
+                    positions[i].y += velocities[i].dy
                 }
+            }
 
-            ViewBuilder<Position, Entity>()
-                .excluding(Grounded.self)
-                .view(into: world)
-                .forEach(in: world) { pos, entity in
-                    if pos.y <= 0 {
-                        grounded.append(entity)
-                    }
+            var grounded: [Entity] = []
+            let view = ViewBuilder<Position, Entity>().excluding(Grounded.self).view(into: world)
+            for (i, (positions, entities)) in view {
+                if positions[i].y <= 0 {
+                    grounded.append(entities[i])
                 }
+            }
 
             for entity in grounded {
                 world.insert(Grounded(), for: entity)
@@ -397,14 +321,12 @@ struct EcsTests {
 
         for _ in 0..<10 { update(&world) }
 
-        var groundedCount = 0
-        ViewBuilder<Grounded>().view(into: world).forEach(in: world) { _ in groundedCount += 1 }
+        var groundedCount = ViewBuilder<Grounded>().view(into: world).count()
         #expect(groundedCount == 5)
 
         for _ in 0..<10 { update(&world) }
 
-        groundedCount = 0
-        ViewBuilder<Grounded>().view(into: world).forEach(in: world) { _ in groundedCount += 1 }
+        groundedCount = ViewBuilder<Grounded>().view(into: world).count()
         #expect(groundedCount == 10)
 
         for entity in entities {
@@ -459,13 +381,12 @@ struct EcsTests {
                 var nearestDistance = Float.greatestFiniteMagnitude
                 var count = 0
 
-                ViewBuilder<Distance, Friend>()
-                    .view(into: snapshot)
-                    .forEach(in: snapshot) { distance, _ in
-                        totalDistance += distance.value
-                        nearestDistance = min(distance.value, nearestDistance)
-                        count += 1
-                    }
+                let view = ViewBuilder<Distance>().including(Friend.self).view(into: snapshot)
+                for (i, distances) in view {
+                    totalDistance += distances[i].value
+                    nearestDistance = min(distances[i].value, nearestDistance)
+                    count += 1
+                }
 
                 return (
                     averageDistance: count > 0 ? totalDistance / Float(count) : 0.0,
@@ -478,13 +399,12 @@ struct EcsTests {
                 var nearestDistance = Float.greatestFiniteMagnitude
                 var count = 0
 
-                ViewBuilder<Distance, Enemy>()
-                    .view(into: snapshot)
-                    .forEach(in: snapshot) { distance, _ in
-                        totalDistance += distance.value
-                        nearestDistance = min(distance.value, nearestDistance)
-                        count += 1
-                    }
+                let view = ViewBuilder<Distance>().including(Enemy.self).view(into: snapshot)
+                for (i, distances) in view {
+                    totalDistance += distances[i].value
+                    nearestDistance = min(distances[i].value, nearestDistance)
+                    count += 1
+                }
 
                 return (
                     averageDistance: count > 0 ? totalDistance / Float(count) : 0.0,
@@ -509,7 +429,7 @@ struct EcsTests {
     }
 
     @Test
-    mutating func mutableConcurrency() async throws {
+    mutating func mutableConcurrency() async {
         struct Position { var x: Float, y: Float }
         struct Velocity { var dx: Float, dy: Float }
         struct Health { var value: Float }
@@ -518,48 +438,47 @@ struct EcsTests {
         let initialPosition = Position(x: 100, y: 100)
         let initialHealth = Health(value: 100)
 
-        let entities = (0..<100).map { _ in world.create() }
-        for (i, e) in entities.enumerated() {
-            let i = Float(i)
-            world.insert(initialPosition, for: e)
-            world.insert(initialHealth, for: e)
-            world.insert(Velocity(dx: i * -0.5, dy: i * -0.5), for: e)
-            world.insert(Damage(value: i * 0.1), for: e)
+        let entities = (0..<100).map {
+            let i = Float($0)
+            return world.create(
+                with: (
+                    initialPosition,
+                    initialHealth,
+                    Velocity(dx: i * -0.5, dy: i * -0.5),
+                    Damage(value: i * 0.1)
+                )
+            )
         }
 
         do {
-            let view1 = ViewBuilder<Position, Velocity>().unsafeView(into: &world)
-            #expect(view1.count == entities.count)
+            let view1 = ViewBuilder<Position, Velocity>().view(into: &world)
+            #expect(view1.count() == entities.count)
             let task1 = Task {
-                for (position, velocity) in view1 {
-                    position.pointee.x += velocity.pointee.dx
-                    position.pointee.y += velocity.pointee.dy
+                for (i, (positions, velocities)) in view1 {
+                    positions[i].x += velocities[i].dx
+                    positions[i].y += velocities[i].dy
                 }
             }
 
-            let view2 = ViewBuilder<Health, Damage>().unsafeView(into: &world)
-            #expect(view2.count == entities.count)
+            let view2 = ViewBuilder<Health, Damage>().view(into: &world)
+            #expect(view2.count() == entities.count)
             let task2 = Task {
-                for (health, damage) in view2 {
-                    health.pointee.value -= damage.pointee.value
+                for (i, (healths, damages)) in view2 {
+                    healths[i].value -= damages[i].value
                 }
             }
 
             await (_, _) = (task1.value, task2.value)
         }
 
-        ViewBuilder<Position, Velocity>()
-            .view(into: world)
-            .forEach(in: world) { position, velocity in
-                #expect(position.x - velocity.dx == initialPosition.x)
-                #expect(position.y - velocity.dy == initialPosition.y)
-            }
+        for (i, (positions, velocities)) in ViewBuilder<Position, Velocity>().view(into: world) {
+            #expect(positions[i].x - velocities[i].dx == initialPosition.x)
+            #expect(positions[i].y - velocities[i].dy == initialPosition.y)
+        }
 
-        ViewBuilder<Health, Damage>()
-            .view(into: world)
-            .forEach(in: world) { health, damage in
-                #expect(health.value + damage.value == initialHealth.value)
-            }
+        for (i, (healths, damages)) in ViewBuilder<Health, Damage>().view(into: world) {
+            #expect(healths[i].value + damages[i].value == initialHealth.value)
+        }
 
         for entity in entities {
             world.destroy(entity)
@@ -583,31 +502,29 @@ struct EcsTests {
             return e
         }
 
-        #expect(ViewBuilder<Entity>().view(into: world).count == entities.count)
-        #expect(ViewBuilder<Position>().view(into: world).count == entities.count)
-        #expect(ViewBuilder<Velocity>().view(into: world).count == entities.count)
+        #expect(ViewBuilder<Entity>().view(into: world).count() == entities.count)
+        #expect(ViewBuilder<Position>().view(into: world).count() == entities.count)
+        #expect(ViewBuilder<Velocity>().view(into: world).count() == entities.count)
 
-        var view = ViewBuilder<Position, Velocity>().view(into: world)
-        #expect(view.count == entities.count)
+        let view = ViewBuilder<Position, Velocity>().view(into: &world)
+        #expect(view.count() == entities.count)
 
-        view.forEach(in: &world) { position, velocity in
-            position.pointee.x += velocity.pointee.x
-            position.pointee.y += velocity.pointee.y
+        for (i, (positions, velocities)) in view {
+            positions[i].x += velocities[i].x
+            positions[i].y += velocities[i].y
         }
 
-        view.forEach(in: world) { position, velocity in
-            #expect(position.x - velocity.x == initialPosition.x)
-            #expect(position.y - velocity.y == initialPosition.y)
+        for (i, (positions, velocities)) in view {
+            #expect(positions[i].x - velocities[i].x == initialPosition.x)
+            #expect(positions[i].y - velocities[i].y == initialPosition.y)
         }
 
         for entity in entities {
             world.destroy(entity)
         }
 
-        view.rebuild(for: world)
-        #expect(view.count == 0)
-        #expect(ViewBuilder<Entity>().view(into: world).count == 0)
-        #expect(ViewBuilder<Position>().view(into: world).count == 0)
-        #expect(ViewBuilder<Velocity>().view(into: world).count == 0)
+        #expect(ViewBuilder<Entity>().view(into: world).count() == 0)
+        #expect(ViewBuilder<Position>().view(into: world).count() == 0)
+        #expect(ViewBuilder<Velocity>().view(into: world).count() == 0)
     }
 }

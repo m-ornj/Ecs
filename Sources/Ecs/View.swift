@@ -1,173 +1,92 @@
-public struct View<each T>: Sendable {
-    private let included: Set<ComponentID>
-    private let excluded: Set<ComponentID>
-    private var archetypes: [Int] = []
-    private var worldID: UInt = 0
-    private var version: UInt = 0
-
-    public private(set) var count: Int = 0
-
-    public init(world: World, included: Set<ComponentID>, excluded: Set<ComponentID>) {
-        var included = included
-        for type in repeat (each T).self {
-            included.insert(ComponentID(type.self))
-        }
-        self.included = included
-        self.excluded = excluded
-
-        rebuild(for: world)
-    }
-
-    public func isValid(for world: World) -> Bool {
-        worldID == world.id && version == world.groupsVersion
-    }
-
-    public mutating func rebuild(for world: World) {
-        let indices = world.archetypeIndices(containing: included, excluding: excluded)
-        archetypes = []
-        archetypes.reserveCapacity(indices.capacity)
-        count = 0
-        for index in indices {
-            archetypes.append(index)
-            count += world.archetypes[index].count
-        }
-        worldID = world.id
-        version = world.groupsVersion
-    }
-
-    public func forEach(
-        in world: World,
-        _ body: (repeat each T) throws -> Void
-    ) rethrows {
-        guard isValid(for: world) else { return }
-        for i in archetypes {
-            let count = world.archetypes[i].count
-            let buffers = (repeat world.archetypes[i].buffer(of: (each T).self))
-            for j in 0..<count {
-                try body(repeat (each buffers)[j])
-            }
-        }
-    }
-
-    public func forEach(
-        in world: inout World,
-        _ body: (repeat UnsafeMutablePointer<each T>) throws -> Void
-    ) rethrows {
-        guard isValid(for: world) else { return }
-        for i in archetypes {
-            let count = world.archetypes[i].count
-            try world.withArchetype(at: i) { archetype in
-                let pointers: (repeat UnsafeMutablePointer<each T>)
-                pointers = (repeat archetype.buffer(of: (each T).self).baseAddress!)
-                for j in 0..<count {
-                    try body(repeat (each pointers).advanced(by: j))
-                }
-            }
-        }
-    }
+// MARK: BufferPointerProtocol
+public protocol BufferPointerProtocol {
+    var count: Int { get }
+    static var null: Self { get }
 }
 
-public struct UnsafeView<each T>: @unchecked Sendable {
-    public let buffers: [(repeat UnsafeMutableBufferPointer<each T>)]
+extension UnsafeBufferPointer: BufferPointerProtocol {
+    @inlinable public static var null: Self { Self(start: nil, count: 0) }
+}
+extension UnsafeMutableBufferPointer: BufferPointerProtocol {
+    @inlinable public static var null: Self { Self(start: nil, count: 0) }
+}
+
+// MARK: BufferPack
+public struct BufferPack<each T: BufferPointerProtocol> {
+    public let buffers: (repeat each T)
     public let count: Int
 
-    public init(world: inout World, included: Set<ComponentID>, excluded: Set<ComponentID>) {
-        var included = included
-        for type in repeat (each T).self {
-            included.insert(ComponentID(type.self))
-        }
-        let indices = world.archetypeIndices(containing: included, excluding: excluded)
-        var buffers: [(repeat UnsafeMutableBufferPointer<each T>)] = []
-        buffers.reserveCapacity(indices.count)
-        var count = 0
-        for index in indices {
-            world.withArchetype(at: index) { archetype in
-                buffers.append((repeat archetype.buffer(of: (each T).self)))
-                count += archetype.count
-            }
+    public init(_ buffers: (repeat each T)) {
+        var count: Int?
+        for buffer in repeat each buffers {
+            assert(count == nil || count == buffer.count)
+            count = buffer.count
         }
         self.buffers = buffers
-        self.count = count
+        self.count = count ?? 0
+    }
+
+    public static var null: Self {
+        Self((repeat (each T).null))
     }
 }
 
-extension UnsafeView: Sequence {
-    public func makeIterator() -> UnsafeViewIterator<repeat each T> {
-        UnsafeViewIterator(buffers: buffers)
-    }
-}
+// MARK: View
+public struct View<each T>: Sequence, IteratorProtocol {
+    public let packs: [BufferPack<repeat UnsafeBufferPointer<each T>>]
+    @usableFromInline var pack: BufferPack<repeat UnsafeBufferPointer<each T>>
+    @usableFromInline var packIndex: Int = 0
+    @usableFromInline var elementIndex: Int = 0
 
-public struct UnsafeViewIterator<each T>: IteratorProtocol {
-    var buffers: [(repeat UnsafeMutableBufferPointer<each T>)]
-    var entityIndex = 0
-    var entitiesCount = 0
-    var bufferIndex = 0
-
-    init(buffers: [(repeat UnsafeMutableBufferPointer<each T>)]) {
-        self.buffers = buffers
-        entityIndex = 0
-        bufferIndex = 0
-
-        if let tuple = buffers.first {
-            for buffer in repeat each tuple {
-                entitiesCount = buffer.count
-                break
-            }
-        }
+    public init(_ packs: [BufferPack<repeat UnsafeBufferPointer<each T>>]) {
+        self.packs = packs
+        self.pack = packs.first ?? .null
     }
 
-    public mutating func next() -> (repeat UnsafeMutablePointer<each T>)? {
-        while bufferIndex < buffers.count {
-            while entityIndex < entitiesCount {
-                let tuple = buffers[bufferIndex]
-                let pointers = (repeat (each tuple).baseAddress!.advanced(by: entityIndex))
-                entityIndex += 1
-                return pointers
+    @inlinable public func count() -> Int { packs.reduce(0) { $0 + $1.count } }
+
+    @inlinable public mutating func next() -> (Int, (repeat UnsafeBufferPointer<each T>))? {
+        while packIndex < packs.endIndex {
+            while elementIndex < pack.count {
+                defer { elementIndex += 1 }
+                return (elementIndex, pack.buffers)
             }
-            entityIndex = 0
-            bufferIndex += 1
-            if bufferIndex < buffers.count {
-                let tuple = buffers[bufferIndex]
-                for buffer in repeat each tuple {
-                    entitiesCount = buffer.count
-                    break
-                }
+            elementIndex = 0
+            packIndex += 1
+            if packIndex < packs.endIndex {
+                pack = packs[packIndex]
             }
         }
         return nil
     }
 }
 
-public struct ViewBuilder<each T>: Sendable {
-    private let included: Set<ComponentID>
-    private let excluded: Set<ComponentID>
+// MARK: MutableView
+public struct MutableView<each T>: Sequence, IteratorProtocol {
+    public let packs: [BufferPack<repeat UnsafeMutableBufferPointer<each T>>]
+    @usableFromInline var pack: BufferPack<repeat UnsafeMutableBufferPointer<each T>>
+    @usableFromInline var packIndex: Int = 0
+    @usableFromInline var elementIndex: Int = 0
 
-    public init(included: Set<ComponentID> = [], excluded: Set<ComponentID> = []) {
-        self.included = included
-        self.excluded = excluded
+    public init(_ packs: [BufferPack<repeat UnsafeMutableBufferPointer<each T>>]) {
+        self.packs = packs
+        self.pack = packs.first ?? .null
     }
 
-    public func including<each U>(_ type: repeat (each U).Type) -> Self {
-        var included = included
-        for type in repeat (each U).self {
-            included.insert(ComponentID(type.self))
+    @inlinable public func count() -> Int { packs.reduce(0) { $0 + $1.count } }
+
+    @inlinable public mutating func next() -> (Int, (repeat UnsafeMutableBufferPointer<each T>))? {
+        while packIndex < packs.endIndex {
+            while elementIndex < pack.count {
+                defer { elementIndex += 1 }
+                return (elementIndex, pack.buffers)
+            }
+            elementIndex = 0
+            packIndex += 1
+            if packIndex < packs.endIndex {
+                pack = packs[packIndex]
+            }
         }
-        return Self(included: included, excluded: excluded)
-    }
-
-    public func excluding<each U>(_ type: repeat (each U).Type) -> Self {
-        var excluded = excluded
-        for type in repeat (each U).self {
-            excluded.insert(ComponentID(type.self))
-        }
-        return Self(included: included, excluded: excluded)
-    }
-
-    public func view(into world: World) -> View<repeat each T> {
-        View(world: world, included: included, excluded: excluded)
-    }
-
-    public func unsafeView(into world: inout World) -> UnsafeView<repeat each T> {
-        UnsafeView(world: &world, included: included, excluded: excluded)
+        return nil
     }
 }
