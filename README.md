@@ -58,7 +58,7 @@ To iterate over entities with specific components, use a `View` created by `View
 ```swift
 let view = ViewBuilder<Position, Velocity>().view(into: world)
 for (i, (positions, velocities)) in view {
-    print(position[i], velocities[i])
+    print(positions[i], velocities[i])
 }
 ```
 
