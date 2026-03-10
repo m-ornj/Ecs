@@ -143,20 +143,6 @@ extension World {
         return .some(archetypes[archetypeIndex][entityIndex])
     }
 
-    public mutating func update<T>(
-        _ type: T.Type,
-        of entity: Entity,
-        _ body: (inout T) throws -> Void
-    ) rethrows {
-        precondition(T.self != Entity.self, "Cannot update Entity of an entity")
-        guard isAlive(entity) else { return }
-        let (archetypeIndex, entityIndex) = entityManager.unwrap(entity)
-        guard archetypes[archetypeIndex].contains(T.self) else { return }
-
-        ensureUniqueID()
-        try body(&archetypes[archetypeIndex][entityIndex])
-    }
-
     public mutating func prepareArchetype<each T>(
         for t: repeat (each T).Type,
         minimumCapacity: Int
