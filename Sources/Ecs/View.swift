@@ -12,7 +12,7 @@ extension UnsafeMutableBufferPointer: BufferPointerProtocol {
 }
 
 // MARK: BufferPack
-public struct BufferPack<each T: BufferPointerProtocol> {
+public struct BufferPack<each T: BufferPointerProtocol>: @unchecked Sendable {
     public let buffers: (repeat each T)
     public let count: Int
 
@@ -32,7 +32,7 @@ public struct BufferPack<each T: BufferPointerProtocol> {
 }
 
 // MARK: View
-public struct View<each T>: Sequence, IteratorProtocol {
+public struct View<each T>: Sequence, IteratorProtocol, Sendable {
     public let packs: [BufferPack<repeat UnsafeBufferPointer<each T>>]
     @usableFromInline var pack: BufferPack<repeat UnsafeBufferPointer<each T>>
     @usableFromInline var packIndex: Int = 0
@@ -62,7 +62,7 @@ public struct View<each T>: Sequence, IteratorProtocol {
 }
 
 // MARK: MutableView
-public struct MutableView<each T>: Sequence, IteratorProtocol {
+public struct MutableView<each T>: Sequence, IteratorProtocol, Sendable {
     public let packs: [BufferPack<repeat UnsafeMutableBufferPointer<each T>>]
     @usableFromInline var pack: BufferPack<repeat UnsafeMutableBufferPointer<each T>>
     @usableFromInline var packIndex: Int = 0

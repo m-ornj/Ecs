@@ -11,14 +11,16 @@ extension ArchetypeID {
         for _ in repeat (each T).self { count += 1 }
         var componentIDs = Set<ComponentID>(minimumCapacity: count)
         for T in repeat (each T).self {
-            componentIDs.insert(ComponentID(T.self))
+            let inserted = componentIDs.insert(ComponentID(T.self)).inserted
+            precondition(inserted, "Duplicate type \(T.self)")
         }
         self.componentIDs = componentIDs
     }
 
     public func adding<T>(_ type: T.Type) -> Self {
         var componentIDs = componentIDs
-        componentIDs.insert(ComponentID(T.self))
+        let inserted = componentIDs.insert(ComponentID(T.self)).inserted
+        precondition(inserted, "Duplicate type \(T.self)")
         return Self(componentIDs: componentIDs)
     }
 
@@ -47,6 +49,7 @@ public struct Archetype: Sendable {
     public private(set) var indices: [ComponentID: Int] = [:]
 
     public var count: Int { components.first?.array.count ?? 0 }
+    public var capacity: Int { components.first?.array.capacity ?? 0 }
     public var startIndex: Int { 0 }
     public var endIndex: Int { count }
 }
@@ -153,7 +156,7 @@ extension Archetype {
 
         return Self(id: id.removing(T.self), components: components, indices: indices)
     }
-    
+
     private func componentIndex<T>(of type: T.Type) -> Int {
         let id = ComponentID(T.self)
         guard let index = indices[id] else {

@@ -1,6 +1,4 @@
-import Foundation
 import Testing
-
 @testable import Ecs
 
 @Suite

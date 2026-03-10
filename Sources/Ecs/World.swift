@@ -22,7 +22,7 @@ public struct World: Sendable {
 }
 
 extension World {
-    public mutating func create<each T>(
+    @discardableResult public mutating func create<each T>(
         with components: (repeat each T) = ()
     ) -> Entity {
         let archetypeID = ArchetypeID(Entity.self, repeat (each T).self)
