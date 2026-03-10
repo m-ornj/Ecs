@@ -1,5 +1,5 @@
 # Ecs
-A lightweight and minimalistic Entity-Component-System (ECS) framework written in Swift. It uses an archetype-based design to organize components efficiently and allows for fast and flexible iteration over entities.
+A lightweight and minimalistic Entity-Component-System (ECS) framework written in Swift. It uses an archetype-based design to organize components efficiently and provides fast and flexible iteration over entities.
 
 This project was built as an exploration of how an ECS could look and feel in native Swift. It’s not designed to be better than any other existing engine and focuses more on minimalism and simplicity, aiming to provide a clean and natural Swift experience.
 
@@ -22,21 +22,20 @@ let entity: Entity = world.create()
 world.destroy(entity)
 ```
 
-You can `insert` and `remove` components for a specific `Entity`. You can also `get` or `update` individual components.
+You can `insert` and `remove` components for a specific `Entity`. You can also `get` individual components of entities. 
 ```swift
 struct Position { var x: Float, y: Float }
-struct Velocity { var x: Float, y: Float }
+struct Velocity { var dx: Float, dy: Float }
 
 world.insert(Position(x: 0, y: 0), for: entity)
-world.insert(Velocity(x: 1, y: 5), for: entity)
+world.insert(Velocity(dx: 1, dy: 5), for: entity)
 
-if let velocity = world.get(Velocity.self, for: entity) {
-    print(velocity)
-    
-    world.update(Position.self, for: entity) { position in
-        position.x += velocity.x
-        position.y += velocity.y
-    }
+if var position = world.get(Position.self, for: entity),
+    let velocity = world.get(Velocity.self, for: entity)
+{
+    position.x += velocity.dx
+    position.y += velocity.dy
+    world.insert(position, for: entity)
 }
 
 world.remove(Position.self, for: entity)
@@ -44,78 +43,50 @@ world.remove(Position.self, for: entity)
 let position = world.get(Position.self, for: entity) // nil
 ```
 
-Pretty much any struct can be a component. The only requirement is to be `BitwiseCopyable`.
-
-Technically, `Entity` itself is a component, which is useful in iterations. You can even `get` an `Entity`, but it has no real point. However, you're **not allowed** to use `update`, `insert` or `remove` with `Entity`. Doing this will trigger a runtime error.
+Any type can be a component. Technically, `Entity` itself is a component, which is useful in iterations. You can even `get` an `Entity`, but it has no real point. However, you're **not allowed** to `insert` or `remove` an `Entity`. Doing this will trigger a runtime error.
 ```swift
 if let other = world.get(Entity.self, for: entity) {
-    // other is the same as entity 
+    // other == entity 
 }
 
 // DON'T DO THIS
-world.update(Entity.self, for: entity) { entity in }
 world.insert(other, for: entity)
 world.remove(Entity.self, for: entity)
 ```
 
-To iterate over entities with specific components, use a `View` created by `ViewBuilder`.
+To iterate over entities with specific components, use a `View` created by `ViewBuilder`. `View` conforms to `Sequence` so you can use iterate in a for loop. The iteration yields a tuple containing an index and a tuple of `UnsafeBufferPointer` for each component type. Use the index to access the corresponding component data from each buffer.
 ```swift
-ViewBuilder<Position, Velocity>()
-    .view(into: world)
-    .forEach(in: world) { position, velocity in
-        print(position, velocity)
-    }
+let view = ViewBuilder<Position, Velocity>().view(into: world)
+for (i, (positions, velocities)) in view {
+    print(position[i], velocities[i])
+}
 ```
 
-Because `Entity` is treated as a component, you can add it to `ViewBuilder` parameters to access entities during iteration.
+Because `Entity` is treated as a component, you can add it to `ViewBuilder` generic parameters to access entities during iteration.
 ```swift
-ViewBuilder<Entity, Position, Velocity>()
-    .view(into: world)
-    .forEach(in: world) { entity, position, velocity in
-        print("\(entity) has \(position) and \(velocity))
-    }
+let view = ViewBuilder<Entity, Position, Velocity>().view(into: world)
+for (i, (entities, positions, velocities)) in view {
+    print("\(entities[i]) has \(positions[i]) and \(velocities[i])")
+}
 ```
 
-There's a mutable version of `forEach` which lets you modify components while iterating by giving you access to `UnsafeMutablePointer`. Unfortunately, Swift doesn't support `inout` with parameter packs (yet), so I had to go with pointers.
-
-Mutable `forEach` captures `World` as `inout` to prevent external changes while iterating. 
+In order to modify components while iterating, you should use `MutableView`. It's created by `ViewBuilder` the same way as `View` with the exception of `World` being passed there as an `inout` argument. Iteration over `MutableView` yields `UnsafeMutableBufferPointer` instead of `UnsafeBufferPointer`.
 ```swift
-ViewBuilder<Position, Velocity>()
-    .view(into: world)
-    .forEach(in: &world) { position, velocity in
-        position.pointee.x += velocity.pointee.x
-        position.pointee.y += velocity.pointee.y
-    }
+let view = ViewBuilder<Position, Velocity>().view(into: &world)
+for (i, (positions, velocities)) in view {
+    positions[i].x += velocities[i].x
+    positions[i].y += velocities[i].y
+}
 ```
 
-You only get access to the components included in `ViewBuilder` parameters, but you can `include` or `exclude` additional components.
+You only get access to the components included in `ViewBuilder` generic parameters, but you can `include` or `exclude` additional components.
 ```swift
-ViewBuilder<Entity>()
+let view = ViewBuilder<Entity>()
     .including(Enemy.self)
     .excluding(Dead.self)
     .view(into: world)
-    .forEach(in: world) { entity in
-        print("\(entity) is an Enemy and isn't Dead")
-    }
-```
 
-`View` caches the result of archetypes sets intersection, so you can (and probably should) store views to avoid recomputing them every time. If the `World` changes and the cache becomes invalid, you have to `rebuild` it. If a `View` is invalid, `forEach` will simply do nothing.
-```swift
-struct MovementSystem {
-    var view: View<Position, Velocity>
-    
-    init(world: inout World) {
-        view = ViewBuilder().view(into: world)
-    }
-
-    mutating func update(world: inout World) {
-        if !view.isValid(for: world) {
-            view.rebuild(for: world)
-        }
-        view.forEach(in: &world) { pos, vel in
-            pos.pointee.x += vel.pointee.x
-            pos.pointee.y += vel.pointee.y
-        }
-    }
+for (i, entities) in view {
+    print("\(entities[i]) is an Enemy and isn't Dead")
 }
 ```
