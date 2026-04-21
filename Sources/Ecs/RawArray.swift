@@ -131,7 +131,7 @@ extension RawArrayStorage {
     func append<T>(_ value: T) {
         reserveCapacity(count + 1)
         let destination = pointer.assumingMemoryBound(to: T.self).advanced(by: count)
-        destination.update(repeating: value, count: 1)
+        destination.initialize(repeating: value, count: 1)
         count += 1
     }
 

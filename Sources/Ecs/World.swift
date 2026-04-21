@@ -9,7 +9,7 @@ private final class WorldID: Sendable {
     }()
 }
 
-public struct World: Sendable {
+public struct World {
     private var _id = WorldID()
     public var id: UInt { _id.id }
 
@@ -17,13 +17,14 @@ public struct World: Sendable {
     public private(set) var archetypes: [Archetype] = []
     public private(set) var archetypeIndexByID: [ArchetypeID: Int] = [:]
     public private(set) var archetypeLookup = ArchetypeLookup()
+    public private(set) var singletons: [ComponentID: Any] = [:]
 
     public init() {}
 }
 
 extension World {
     @discardableResult public mutating func create<each T>(
-        with components: (repeat each T) = ()
+        _ components: repeat each T
     ) -> Entity {
         let archetypeID = ArchetypeID(Entity.self, repeat (each T).self)
         let archetypeIndex: Int
@@ -187,6 +188,18 @@ extension World {
     ) -> UnsafeMutableBufferPointer<T> {
         ensureUniqueID()
         return archetypes[i].buffer(of: T.self)
+    }
+
+    public mutating func insert<T>(_ singleton: T) {
+        singletons[ComponentID(T.self)] = singleton
+    }
+
+    public mutating func remove<T>(_ t: T.Type) {
+        singletons.removeValue(forKey: ComponentID(T.self))
+    }
+
+    public func get<T>(_ type: T.Type) -> T? {
+        singletons[ComponentID(T.self)] as? T
     }
 
     private mutating func ensureUniqueID() {

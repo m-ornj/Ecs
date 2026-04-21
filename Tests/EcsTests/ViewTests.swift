@@ -110,9 +110,9 @@ struct ViewTests {
     @Test
     mutating func bufferIntegrity() {
         let entities: [Entity] = [
-            world.create(with: (Position(x: 10, y: 20), Velocity(dx: 1, dy: 2))),
-            world.create(with: (Position(x: 30, y: 40), Velocity(dx: 3, dy: 4))),
-            world.create(with: (Position(x: 50, y: 60), Velocity(dx: 5, dy: 6))),
+            world.create(Position(x: 10, y: 20), Velocity(dx: 1, dy: 2)),
+            world.create(Position(x: 30, y: 40), Velocity(dx: 3, dy: 4)),
+            world.create(Position(x: 50, y: 60), Velocity(dx: 5, dy: 6)),
         ]
 
         var foundPositions: Set<Int> = []
@@ -141,7 +141,7 @@ struct ViewTests {
     mutating func entityComponentMapping() {
         let count = 10
         let entities = (0..<count).map { i in
-            world.create(with: (Position(x: i * 10, y: 0), Health(value: i * 100)))
+            world.create(Position(x: i * 10, y: 0), Health(value: i * 100))
         }
 
         var entityHealthMap: [Entity: Int] = [:]
@@ -167,11 +167,11 @@ struct ViewTests {
     @Test
     mutating func multipleArchetypesIteration() {
         let entities: [Entity] = [
-            world.create(with: Position(x: 1, y: 1)),
-            world.create(with: Position(x: 2, y: 2)),
-            world.create(with: (Position(x: 3, y: 3), Velocity(dx: 1, dy: 1))),
-            world.create(with: (Position(x: 4, y: 4), Velocity(dx: 1, dy: 1))),
-            world.create(with: (Position(x: 5, y: 5), Health(value: 100))),
+            world.create(Position(x: 1, y: 1)),
+            world.create(Position(x: 2, y: 2)),
+            world.create(Position(x: 3, y: 3), Velocity(dx: 1, dy: 1)),
+            world.create(Position(x: 4, y: 4), Velocity(dx: 1, dy: 1)),
+            world.create(Position(x: 5, y: 5), Health(value: 100)),
         ]
 
         let view = ViewBuilder<Position>().view(into: world)
@@ -191,8 +191,8 @@ struct ViewTests {
     @Test
     mutating func emptyViewNeverIterates() {
         let entities: [Entity] = [
-            world.create(with: Position(x: 100, y: 100)),
-            world.create(with: Position(x: 200, y: 200)),
+            world.create(Position(x: 100, y: 100)),
+            world.create(Position(x: 200, y: 200)),
         ]
 
         let view = ViewBuilder<Velocity>().view(into: world)
@@ -213,7 +213,7 @@ struct ViewTests {
     mutating func viewReusability() {
         let count = 100
         let entities = (0..<count).map { i in
-            let entity = world.create(with: Health(value: i))
+            let entity = world.create(Health(value: i))
             if i % 2 == 0 { world.insert(Noise1(value: i), for: entity) }
             if i % 3 == 0 { world.insert(Noise2(value: i), for: entity) }
             return entity
@@ -248,7 +248,7 @@ struct ViewTests {
         let range = (0..<100)
 
         let entities = range.map { health in
-            world.create(with: Health(value: health))
+            world.create(Health(value: health))
         }
 
         let healths = ViewBuilder<Health>()
@@ -306,9 +306,9 @@ struct MutableViewTests {
     @Test
     mutating func bufferIntegrity() {
         let entities: [Entity] = [
-            world.create(with: (Position(x: 10, y: 20), Velocity(dx: 1, dy: 2))),
-            world.create(with: (Position(x: 30, y: 40), Velocity(dx: 3, dy: 4))),
-            world.create(with: (Position(x: 50, y: 60), Velocity(dx: 5, dy: 6))),
+            world.create(Position(x: 10, y: 20), Velocity(dx: 1, dy: 2)),
+            world.create(Position(x: 30, y: 40), Velocity(dx: 3, dy: 4)),
+            world.create(Position(x: 50, y: 60), Velocity(dx: 5, dy: 6)),
         ]
 
         var foundPositions: Set<Int> = []
@@ -337,7 +337,7 @@ struct MutableViewTests {
     mutating func entityComponentMapping() {
         let count = 10
         let entities = (0..<count).map { i in
-            world.create(with: (Position(x: i * 10, y: 0), Health(value: i * 100)))
+            world.create(Position(x: i * 10, y: 0), Health(value: i * 100))
         }
 
         var entityHealthMap: [Entity: Int] = [:]
@@ -363,11 +363,11 @@ struct MutableViewTests {
     @Test
     mutating func multipleArchetypesIteration() {
         let entities: [Entity] = [
-            world.create(with: Position(x: 1, y: 1)),
-            world.create(with: Position(x: 2, y: 2)),
-            world.create(with: (Position(x: 3, y: 3), Velocity(dx: 1, dy: 1))),
-            world.create(with: (Position(x: 4, y: 4), Velocity(dx: 1, dy: 1))),
-            world.create(with: (Position(x: 5, y: 5), Health(value: 100))),
+            world.create(Position(x: 1, y: 1)),
+            world.create(Position(x: 2, y: 2)),
+            world.create(Position(x: 3, y: 3), Velocity(dx: 1, dy: 1)),
+            world.create(Position(x: 4, y: 4), Velocity(dx: 1, dy: 1)),
+            world.create(Position(x: 5, y: 5), Health(value: 100)),
         ]
 
         let view = ViewBuilder<Position>().view(into: &world)
@@ -387,8 +387,8 @@ struct MutableViewTests {
     @Test
     mutating func emptyViewNeverIterates() {
         let entities: [Entity] = [
-            world.create(with: Position(x: 100, y: 100)),
-            world.create(with: Position(x: 200, y: 200)),
+            world.create(Position(x: 100, y: 100)),
+            world.create(Position(x: 200, y: 200)),
         ]
 
         let view = ViewBuilder<Velocity>().view(into: &world)
@@ -409,7 +409,7 @@ struct MutableViewTests {
     mutating func viewReusability() {
         let count = 100
         let entities = (0..<count).map { i in
-            let entity = world.create(with: Health(value: i))
+            let entity = world.create(Health(value: i))
             if i % 2 == 0 { world.insert(Noise1(value: i), for: entity) }
             if i % 3 == 0 { world.insert(Noise2(value: i), for: entity) }
             return entity
@@ -444,7 +444,7 @@ struct MutableViewTests {
         let range = (0..<100)
 
         let entities = range.map { health in
-            world.create(with: Health(value: health))
+            world.create(Health(value: health))
         }
 
         let healths = ViewBuilder<Health>()
@@ -489,8 +489,8 @@ struct MutableViewTests {
     @Test
     mutating func mutationPersistence() {
         let entities = [
-            world.create(with: (Position(x: 0, y: 0), Velocity(dx: 10, dy: 20))),
-            world.create(with: (Position(x: 100, y: 200), Velocity(dx: 5, dy: 15))),
+            world.create(Position(x: 0, y: 0), Velocity(dx: 10, dy: 20)),
+            world.create(Position(x: 100, y: 200), Velocity(dx: 5, dy: 15)),
         ]
 
         for (i, (positions, velocities)) in ViewBuilder<Position, Velocity>().view(into: &world) {
@@ -517,9 +517,9 @@ struct MutableViewTests {
         struct Enemy {}
 
         let entities = [
-            world.create(with: (Health(value: 100), Player())),
-            world.create(with: (Health(value: 100), Enemy())),
-            world.create(with: (Health(value: 100), Enemy())),
+            world.create(Health(value: 100), Player()),
+            world.create(Health(value: 100), Enemy()),
+            world.create(Health(value: 100), Enemy()),
         ]
         let player = entities[0]
 
@@ -539,7 +539,7 @@ struct MutableViewTests {
 
     @Test
     mutating func sequentialMutations() {
-        let entity = world.create(with: Position(x: 10, y: 10))
+        let entity = world.create(Position(x: 10, y: 10))
 
         for (i, positions) in ViewBuilder<Position>().view(into: &world) {
             positions[i].x *= 2
@@ -572,12 +572,10 @@ struct MutableViewTests {
 
         let entities = (0..<100).map { i in
             return world.create(
-                with: (
-                    initialPosition,
-                    initialHealth,
-                    Velocity(dx: i * 10, dy: i * 10),
-                    Damage(value: i)
-                )
+                initialPosition,
+                initialHealth,
+                Velocity(dx: i * 10, dy: i * 10),
+                Damage(value: i)
             )
         }
 

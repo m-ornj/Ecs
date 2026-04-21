@@ -13,8 +13,8 @@ struct WorldTests {
     func createAndGet() {
         var world = World()
 
-        let e1 = world.create(with: (Position(x: 10, y: 20), Velocity(dx: 1, dy: 2)))
-        let e2 = world.create(with: Health(value: 100))
+        let e1 = world.create(Position(x: 10, y: 20), Velocity(dx: 1, dy: 2))
+        let e2 = world.create(Health(value: 100))
         let e3 = world.create()
 
         #expect(world.get(Position.self, for: e1) == Position(x: 10, y: 20))
@@ -39,8 +39,8 @@ struct WorldTests {
     func destroyAndCleanup() {
         var world = World()
 
-        let e1 = world.create(with: (Position(x: 1, y: 2), Velocity(dx: 3, dy: 4)))
-        let e2 = world.create(with: Position(x: 5, y: 6))
+        let e1 = world.create(Position(x: 1, y: 2), Velocity(dx: 3, dy: 4))
+        let e2 = world.create(Position(x: 5, y: 6))
 
         world.destroy(e1)
 
@@ -115,7 +115,7 @@ struct WorldTests {
     func destroyIdempotent() {
         var world = World()
 
-        let entity = world.create(with: Position(x: 1, y: 2))
+        let entity = world.create(Position(x: 1, y: 2))
 
         world.destroy(entity)
         #expect(!world.isAlive(entity))
@@ -136,7 +136,7 @@ struct WorldTests {
     func insertOverwrites() {
         var world = World()
 
-        let entity = world.create(with: (Health(value: 100), Position(x: 10, y: 10)))
+        let entity = world.create(Health(value: 100), Position(x: 10, y: 10))
         #expect(world.get(Health.self, for: entity)?.value == 100)
 
         world.insert(Health(value: 50), for: entity)
@@ -150,10 +150,10 @@ struct WorldTests {
     func entityReuse() {
         var world = World()
 
-        let e1 = world.create(with: Health(value: 100))
+        let e1 = world.create(Health(value: 100))
         world.destroy(e1)
 
-        let e2 = world.create(with: Health(value: 200))
+        let e2 = world.create(Health(value: 200))
 
         #expect(!world.isAlive(e1))
         #expect(world.get(Health.self, for: e1) == nil)
@@ -166,7 +166,7 @@ struct WorldTests {
         await #expect(processExitsWith: .failure) {
             var world = World()
             let entity = world.create()
-            world.create(with: entity)
+            world.create(entity)
         }
     }
 
@@ -190,11 +190,11 @@ struct WorldTests {
     @Test func createWithDuplicates() async {
         await #expect(processExitsWith: .failure) {
             var world = World()
-            world.create(with: (Position(x: 10, y: 10), Position(x: 20, y: 20)))
+            world.create(Position(x: 10, y: 10), Position(x: 20, y: 20))
         }
         await #expect(processExitsWith: .failure) {
             var world = World()
-            world.create(with: (Damage(value: 1), Health(value: 100), Damage(value: 2)))
+            world.create(Damage(value: 1), Health(value: 100), Damage(value: 2))
         }
     }
 
@@ -211,10 +211,9 @@ struct WorldTests {
 
         for i in 0..<count {
             let entity = world.create(
-                with: (
-                    Position(x: i, y: i),
-                    Velocity(dx: 1, dy: 1)
-                ))
+                Position(x: i, y: i),
+                Velocity(dx: 1, dy: 1)
+            )
             #expect(world.isAlive(entity))
         }
 
@@ -236,7 +235,7 @@ struct WorldTests {
 
         var world = World()
 
-        let entities = (0..<100).map { i in world.create(with: (Flag(), Position(x: i, y: i))) }
+        let entities = (0..<100).map { i in world.create(Flag(), Position(x: i, y: i)) }
 
         let id = ArchetypeID(Entity.self, Flag.self, Position.self)
         #expect(world.archetypes.first { $0.id == id }!.count == entities.count)
